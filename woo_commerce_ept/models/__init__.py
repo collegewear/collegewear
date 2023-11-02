@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
 # See LICENSE file for full copyright and licensing details.
+
+# Increased Buffer limit for large response
+import os
+os.environ['ODOO_LIMIT_LITEVAL_BUFFER'] = '10240000'
 from . import res_company
 from . import instance_ept
 from . import payment_gateway

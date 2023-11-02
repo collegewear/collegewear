@@ -86,15 +86,19 @@ class WooCouponDataQueueEpt(models.Model):
         @author: Nilesh Parmar on Date 28 Dec 2019.
         Migrated by Maulik Barad on Date 07-Oct-2021.
         """
-        coupon_data_queue_line_obj = self.env["woo.coupon.data.queue.line.ept"]
         vals_list = []
         for coupon in coupons:
-            vals_list.append({"coupon_data_queue_id": self.id,
-                              "woo_coupon": coupon["id"],
-                              "coupon_data": coupon,
-                              "number": coupon["code"]})
-        if vals_list:
-            return coupon_data_queue_line_obj.create(vals_list)
+            coupon_data_queue_line_obj = self.env["woo.coupon.data.queue.line.ept"]
+            coupon_queue_line_id = coupon_data_queue_line_obj.search([('woo_coupon', '=', coupon["id"])], limit=1)
+            if coupon_queue_line_id:
+                coupon_queue_line_id.update({'coupon_data': coupon})
+            else:
+                vals_list.append({"coupon_data_queue_id": self.id,
+                                  "woo_coupon": coupon["id"],
+                                  "coupon_data": coupon,
+                                  "number": coupon["code"]})
+                if vals_list:
+                    coupon_data_queue_line_obj.create(vals_list)
         return False
 
     def action_force_done(self):

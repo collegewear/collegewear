@@ -17,7 +17,7 @@ class WooProductCategoryEpt(models.Model):
     _name = 'woo.product.categ.ept'
     _order = 'name'
     _description = "WooCommerce Product Category"
-    _rec_name = 'complete_name'
+    _rec_name = 'name'
 
     name = fields.Char(required="1", translate=True)
     parent_id = fields.Many2one('woo.product.categ.ept', string='Parent', index=True, ondelete='cascade')

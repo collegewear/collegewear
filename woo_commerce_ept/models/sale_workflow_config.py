@@ -14,7 +14,10 @@ class WooSaleAutoWorkflowConfiguration(models.Model):
     woo_instance_id = fields.Many2one("woo.instance.ept", "Instance", required=1)
     woo_payment_gateway_id = fields.Many2one("woo.payment.gateway", "Payment Gateway", required=1)
     active = fields.Boolean(default=True)
+    woo_order_status = fields.Selection(
+        [("processing", "Processing"), ("pending", "Pending Payment"), ("on-hold", "On Hold"),
+         ("completed", "Completed")], default="processing")
 
     _sql_constraints = [
-        ('_workflow_unique_constraint', 'unique(woo_financial_status,woo_instance_id,woo_payment_gateway_id)',
+        ('_workflow_unique_constraint', 'unique(woo_financial_status,woo_instance_id,woo_payment_gateway_id, woo_order_status)',
          'Financial status must be unique in the list')]

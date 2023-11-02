@@ -111,15 +111,21 @@ class WooCustomerDataQueueEpt(models.Model):
             message = "Customer Queue %s created." % customer_queue.name
         _logger.info(message)
 
-        sync_vals = {
-            'woo_instance_id': instance.id,
-            'queue_id': customer_queue.id,
-            'woo_synced_data': json.dumps(customer),
-            'woo_synced_data_id': customer.get('id'),
-            'name': customer.get('billing').get('first_name') + " " + customer.get('billing').get(
-                'last_name') if customer.get('billing') else ''
-        }
-        customer_data_queue_line_obj.create(sync_vals)
+        existing_customer_data_queue_line = customer_data_queue_line_obj.search(
+            [('woo_synced_data_id', '=', customer.get('id')), ('woo_instance_id', '=', instance.id),
+             ('state', 'in', ['draft', 'failed'])])
+        if not existing_customer_data_queue_line:
+            sync_vals = {
+                'woo_instance_id': instance.id,
+                'queue_id': customer_queue.id,
+                'woo_synced_data': json.dumps(customer),
+                'woo_synced_data_id': customer.get('id'),
+                'name': customer.get('billing').get('first_name') + " " + customer.get('billing').get(
+                    'last_name') if customer.get('billing') else ''
+            }
+            customer_data_queue_line_obj.create(sync_vals)
+        else:
+            existing_customer_data_queue_line.write({'woo_synced_data': json.dumps(customer)})
 
         if len(customer_queue.queue_line_ids) >= 50:
             customer_queue.queue_line_ids.process_woo_customer_queue_lines_directly()

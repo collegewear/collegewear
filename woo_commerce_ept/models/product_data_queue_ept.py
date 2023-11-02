@@ -122,14 +122,20 @@ class WooProductDataQueueEpt(models.Model):
             is_sync_image_with_product = 'pending'
 
         if product_data_queue:
-            sync_queue_vals_line = {
-                'woo_instance_id': instance.id, 'name': product_data.get('name'), 'synced_date': datetime.now(),
-                'queue_id': product_data_queue.id, 'woo_synced_data': json.dumps(product_data),
-                'woo_update_product_date': product_data.get('date_modified'),
-                'woo_synced_data_id': product_data.get('id'),
-                'image_import_state': is_sync_image_with_product
-            }
-            product_queue_line_obj.create(sync_queue_vals_line)
+            existing_product_queue_line_data = product_queue_line_obj.search(
+                [('woo_instance_id', '=', instance.id), ('woo_synced_data_id', '=', product_data.get('id')),
+                 ('state', 'in', ['draft', 'failed'])])
+            if not existing_product_queue_line_data:
+                sync_queue_vals_line = {
+                    'woo_instance_id': instance.id, 'name': product_data.get('name'), 'synced_date': datetime.now(),
+                    'queue_id': product_data_queue.id, 'woo_synced_data': json.dumps(product_data),
+                    'woo_update_product_date': product_data.get('date_modified'),
+                    'woo_synced_data_id': product_data.get('id'),
+                    'image_import_state': is_sync_image_with_product
+                }
+                product_queue_line_obj.create(sync_queue_vals_line)
+            else:
+                existing_product_queue_line_data.write({'woo_synced_data': json.dumps(product_data)})
             _logger.info("Added product id : %s in existing product queue %s", product_data.get('id'),
                          product_data_queue.display_name)
 

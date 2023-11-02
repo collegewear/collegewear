@@ -97,11 +97,17 @@ class WooOrderDataQueueEpt(models.Model):
         vals_list = []
         woo_order_data_queue_line_obj = self.env["woo.order.data.queue.line.ept"]
         for order in orders:
-            vals_list.append({"order_data_queue_id": self.id,
-                              "woo_order": order["id"],
-                              "order_data": order,
-                              "number": order["number"],
-                              })
+            existing_order_data_queue_line = woo_order_data_queue_line_obj.search(
+                [('woo_order', '=', order["id"]), ('instance_id', '=', self.instance_id.id),
+                 ('state', 'in', ['draft', 'failed'])])
+            if existing_order_data_queue_line:
+                existing_order_data_queue_line.write({'order_data': order})
+            else:
+                vals_list.append({"order_data_queue_id": self.id,
+                                  "woo_order": order["id"],
+                                  "order_data": order,
+                                  "number": order["number"],
+                                  })
         if vals_list:
             return woo_order_data_queue_line_obj.create(vals_list)
         return False

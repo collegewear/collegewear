@@ -12,8 +12,15 @@ _logger = logging.getLogger("WooCommerce")
 class ResPartner(models.Model):
     _inherit = "res.partner"
 
+    def _compute_woo_partner_count(self):
+        woo_res_partner_obj = self.env['woo.res.partner.ept']
+        for partner in self:
+            woo_partners = woo_res_partner_obj.search([('partner_id', '=', partner.id)])
+            partner.woo_customer_count = len(woo_partners) if woo_partners else 0
+
     is_woo_customer = fields.Boolean(string="Is Woo Customer?",
                                      help="Used for identified that the customer is imported from WooCommerce store.")
+    woo_customer_count = fields.Integer(string='Woo Customers', compute='_compute_woo_partner_count')
 
     def woo_check_proper_response(self, response, common_log_id):
         """

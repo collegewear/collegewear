@@ -149,6 +149,7 @@ class WooProductDataQueueLineEpt(models.Model):
                                                            woo_template, woo_product, template_images_updated,
                                                            product_dict)
                     template_images_updated = True
+            self._cr.commit()
             browsable_queue_line.write({'image_import_state': 'done', 'woo_synced_data': False})
         return True
 

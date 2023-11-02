@@ -101,15 +101,18 @@ class SaleOrder(models.Model):
             data = orders_data[:50]
             if data:
                 order_data_queue = order_data_queue_obj.create(vals)
-                order_queues_list += order_data_queue
                 _logger.info("New order queue %s created.", order_data_queue.name)
                 order_data_queue.create_woo_data_queue_lines(data)
-                _logger.info("Lines added in Order queue %s.", order_data_queue.name)
+                if order_data_queue.order_data_queue_line_ids:
+                    order_queues_list += order_data_queue
+                    _logger.info("Lines added in Order queue %s.", order_data_queue.name)
+                    message = "Order Queue created %s" % order_data_queue.name
+                    bus_bus_obj._sendone(self.env.user.partner_id, 'simple_notification',
+                                         {'title': _('WooCommerce Connector'), 'message': _(message), "sticky": False,
+                                          "warning": True})
+                else:
+                    order_data_queue.unlink()
                 del orders_data[:50]
-                message = "Order Queue created %s" % order_data_queue.name
-                bus_bus_obj._sendone(self.env.user.partner_id, 'simple_notification',
-                                     {'title': _('WooCommerce Connector'), 'message': _(message), "sticky": False,
-                                      "warning": True})
                 self._cr.commit()
 
         return order_queues_list
@@ -309,7 +312,11 @@ class SaleOrder(models.Model):
         if response.status_code != 200:
             common_log_book_id = common_log_book_obj.create({"woo_instance_id": woo_instance.id,
                                                              "type": "import", "module": "woocommerce_ept"})
-            message = (str(response.status_code) + " || " + response.json().get("message", response.reason))
+            try:
+                message = (str(response.status_code) + " || " + response.json())
+            except:
+                message = (response.json().get("message", response.reason))
+                
             self.create_woo_log_lines(message, common_log_book_id)
             return False
 
@@ -326,7 +333,7 @@ class SaleOrder(models.Model):
         order_queue_ids = self.create_woo_order_data_queue(woo_instance, orders_data, order_type).ids
         order_queues += order_queue_ids
 
-        total_pages = response.headers.get("X-WP-TotalPages")
+        total_pages = response.headers.get('X-WP-TotalPages', 0) if response else 1
         if int(total_pages) > 1:
             order_queue_ids = self.import_all_orders(total_pages, params, wc_api, woo_instance, order_type)
             order_queues += order_queue_ids
@@ -406,6 +413,8 @@ class SaleOrder(models.Model):
             "analytic_account_id": woo_instance.woo_analytic_account_id.id
             if woo_instance.woo_analytic_account_id else False,
         }
+        if self.env["ir.config_parameter"].sudo().get_param("woo_commerce_ept.use_default_terms_and_condition_of_odoo"):
+            vals = self.prepare_order_note_with_customer_note(vals)
         return vals
 
     def get_order_link(self):
@@ -694,10 +703,11 @@ class SaleOrder(models.Model):
         # Checks for the product. If found then returns it.
         woo_product_id = order_line.get("variation_id") if order_line.get("variation_id") else order_line.get(
             "product_id")
-        woo_product = woo_product_template_obj.search_odoo_product_variant(woo_instance, order_line.get("sku"),
-                                                                           woo_product_id)[0]
+        woo_product, odoo_product = woo_product_template_obj.search_odoo_product_variant(woo_instance,
+                                                                                         order_line.get("sku"),
+                                                                                         woo_product_id)
         # If product not found and configuration is set to import product, then creates it.
-        if not woo_product and woo_instance.auto_import_product:
+        if not woo_product and woo_instance.auto_import_product or odoo_product:
             if not order_line.get("product_id"):
                 _logger.info('Product id not found in sale order line response')
                 return woo_product
@@ -748,6 +758,26 @@ class SaleOrder(models.Model):
         if float(total) == 0 and float(total_discount) > 0:
             return True
         return False
+
+    def get_status_code(self, order_data):
+        """
+        Get Order Status Dictionary.
+        :param order_data: order status receive from woocommerce
+        :return: order status dictionary
+        @author: Yagnik Joshi on Date 26-April-2023.
+        Task id : 225714
+        """
+        status_code = ''
+        order_status = order_data.get('status')
+        if order_status == "pending":
+            status_code = 'pending'
+        elif order_status == "processing":
+            status_code = 'processing'
+        elif order_status == "on-hold":
+            status_code = 'on-hold'
+        elif order_status == "completed":
+            status_code = 'completed'
+        return status_code
 
     def woo_prepare_tax_data(self, tax_line_data, rate_percent, woo_taxes, queue_line, common_log_book_id,
                              woo_instance, order_data):
@@ -892,11 +922,17 @@ class SaleOrder(models.Model):
                 woo_instance.with_context(woo_operation=woo_operation).meta_field_mapping(order_data, operation_type,
                                                                                           record)
 
-            if sale_order.woo_status == 'completed':
-                sale_order.auto_workflow_process_id.with_context(
-                    log_book_id=common_log_book_id.id).shipped_order_workflow_ept(sale_order)
+            # if sale_order.woo_status == 'completed':
+            #     sale_order.auto_workflow_process_id.with_context(
+            #         log_book_id=common_log_book_id.id).shipped_order_workflow_ept(sale_order)
+            # else:
+            #     sale_order.with_context(log_book_id=common_log_book_id.id).process_orders_and_invoices_ept()
+
+            if order_data.get('status') == 'completed':
+                sale_order.auto_workflow_process_id.shipped_order_workflow_ept(sale_order)
             else:
-                sale_order.with_context(log_book_id=common_log_book_id.id).process_orders_and_invoices_ept()
+                sale_order.auto_workflow_process_id.auto_workflow_process_ept(sale_order.auto_workflow_process_id.id,
+                                                                              [sale_order.id])
 
             service_product = [product for product in sale_order.order_line.product_id if
                                product.detailed_type == 'service']
@@ -909,7 +945,7 @@ class SaleOrder(models.Model):
                                                                                           record)
 
             new_orders += sale_order
-            queue_line.write({"sale_order_id": sale_order.id, "state": "done", "order_data" : False})
+            queue_line.write({"sale_order_id": sale_order.id, "state": "done", "order_data": False})
             message = "Sale order: %s and Woo order number: %s is created." % (sale_order.name,
                                                                                order_data.get('number'))
             _logger.info(message)
@@ -976,18 +1012,21 @@ class SaleOrder(models.Model):
         financial_status = self.get_financial_status(order_data)
         payment_gateway = self.create_or_update_payment_gateway(woo_instance, order_data)
         no_payment_gateway = self.verify_order_for_payment_method(order_data)
+        status_code = self.get_status_code(order_data)
 
         if payment_gateway:
             workflow_config = sale_auto_workflow_obj.search([("woo_instance_id", "=", woo_instance.id),
                                                              ("woo_financial_status", "=", financial_status),
-                                                             ("woo_payment_gateway_id", "=", payment_gateway.id)],
+                                                             ("woo_payment_gateway_id", "=", payment_gateway.id),
+                                                             ("woo_order_status", "=", status_code)],
                                                             limit=1)
         elif no_payment_gateway:
             payment_gateway = woo_payment_gateway_obj.search([("code", "=", "no_payment_method"),
                                                               ("woo_instance_id", "=", woo_instance.id)])
             workflow_config = sale_auto_workflow_obj.search([("woo_instance_id", "=", woo_instance.id),
                                                              ("woo_financial_status", "=", financial_status),
-                                                             ("woo_payment_gateway_id", "=", payment_gateway.id)],
+                                                             ("woo_payment_gateway_id", "=", payment_gateway.id),
+                                                             ("woo_order_status", "=", status_code)],
                                                             limit=1)
         else:
             message = """- System could not find the payment gateway response from WooCommerce store.
@@ -998,11 +1037,11 @@ class SaleOrder(models.Model):
         if not workflow_config:
             message = """- Automatic order process workflow configuration not found for this order %s.
             - System tries to find the workflow based on combination of Payment Gateway(such as Manual, Credit Card, 
-            Paypal etc.) and Financial Status(such as Paid,Pending,Authorised etc.).
-            - In this order Payment Gateway is %s and Financial Status is %s.
+            Paypal etc.) and Financial Status(such as Paid,Pending,Authorised etc.) and Order Status(such as Processing,Pending Payment,On Hold,Completed etc.).
+            - In this order Payment Gateway is %s and Financial Status is %s and Order Status is %s.
             - You can configure the Automatic order process workflow under the menu Woocommerce > Configuration > 
             Financial Status.""" % (
-                order_data.get("number"), order_data.get("payment_method_title", ""), financial_status)
+                order_data.get("number"), order_data.get("payment_method_title", ""), financial_status, status_code)
             self.create_woo_log_lines(message, common_log_book_id, queue_line)
             return False
         workflow = workflow_config.woo_auto_workflow_id
@@ -1029,7 +1068,7 @@ class SaleOrder(models.Model):
         woo_partner_obj = self.env['woo.res.partner.ept']
         partner = False
 
-        if not all(order_data.get('billing').get('first_name') and order_data.get('billing').get('last_name')):
+        if not order_data.get('billing').get('first_name') and not order_data.get('billing').get('last_name'):
             message = "- System could not find the billing address in WooCommerce order : %s" % (order_data.get("id"))
             self.create_woo_log_lines(message, common_log_book_id, queue_line)
             return False, False, False
@@ -1269,6 +1308,8 @@ class SaleOrder(models.Model):
             return log_line.id
         update_order_list = [order_res.get('id') for order_res in response.json().get('update', {}) if
                              not order_res.get('error')]
+        for order_res in response.json().get('update', {}):
+            _logger.info("Response Error %s" % order_res.get('error'))
         log_lines = []
         for order in woo_orders:
             if order.get('id') not in update_order_list:
@@ -1381,6 +1422,8 @@ class SaleOrder(models.Model):
 
             if not order:
                 order = self.create_woo_orders(queue_line, log_book)
+                if not order:
+                    return
 
             if woo_status != "cancelled":
                 order.woo_change_shipping_partner(order_data, woo_instance, queue_line, False)
@@ -1424,7 +1467,7 @@ class SaleOrder(models.Model):
             orders.append(order)
             if message:
                 order.create_woo_log_lines(message, log_book, queue_line)
-            else:
+            elif not queue_line.state == 'failed':
                 queue_line.state = "done"
                 queue_line.order_data = False
                 order_vals = {"woo_status": woo_status}
@@ -1568,6 +1611,8 @@ class SaleOrder(models.Model):
         Migrated by Maulik Barad on Date 07-Oct-2021.
         """
         self.ensure_one()
+        if not self.woo_instance_id:
+            return super(SaleOrder, self).validate_and_paid_invoices_ept(work_flow_process_record)
         if self.woo_instance_id and self.woo_status == 'pending':
             return False
         if work_flow_process_record.create_invoice:

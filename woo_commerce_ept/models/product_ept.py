@@ -175,11 +175,23 @@ class WooProductTemplateEpt(models.Model):
         Migrated Maulik Barad on Date 07-Oct-2021.
         """
         vals = {}
-        price = instance.woo_pricelist_id.get_product_price_ept(variant.product_id)
+        # price = instance.woo_pricelist_id.get_product_price_ept(variant.product_id)
+        # vals.update({'regular_price': str(price)})
+        # if instance.woo_extra_pricelist_id:
+        #     sale_price = instance.woo_extra_pricelist_id.get_product_price_ept(variant.product_id)
+        #     vals.update({'sale_price': str(sale_price)})
+        price, regular_price_rule = instance.woo_pricelist_id.get_product_price_list_rule(variant.product_id,
+                                                                                          1.0,
+                                                                                          partner=False)
         vals.update({'regular_price': str(price)})
         if instance.woo_extra_pricelist_id:
-            sale_price = instance.woo_extra_pricelist_id.get_product_price_ept(variant.product_id)
-            vals.update({'sale_price': str(sale_price)})
+            sale_price, sale_price_rule = instance.woo_extra_pricelist_id.get_product_price_list_rule(
+                variant.product_id,
+                1.0,
+                partner=False)
+            if sale_price_rule:
+                sale_price = instance.woo_extra_pricelist_id.get_product_price_ept(variant.product_id)
+                vals.update({'sale_price': str(sale_price) if sale_price > 0 else ""})
         return vals
 
     def prepare_batches(self, data):
@@ -274,16 +286,14 @@ class WooProductTemplateEpt(models.Model):
                      'product_type': 'simple'})
 
         # For Variable products.
-        variable_products = woo_templates.filtered(lambda x: x.woo_product_type == 'variable')
-        if variable_products:
-            for template in variable_products:
-                variations = self.prepare_variable_batch_export_stock_data(template, product_stock)
-                if variations:
-                    variant_batches = self.prepare_batches(variations)
-                    queue_data.append(
-                        {'batch_details': variant_batches,
-                         'woo_tmpl_id': template.woo_tmpl_id,
-                         'product_type': 'variable'})
+        for template in woo_templates.filtered(lambda x: x.woo_product_type == 'variable'):
+            variations = self.prepare_variable_batch_export_stock_data(template, product_stock)
+            if variations:
+                variant_batches = self.prepare_batches(variations)
+                queue_data.append(
+                    {'batch_details': variant_batches,
+                     'woo_tmpl_id': template.woo_tmpl_id,
+                     'product_type': 'variable'})
 
         if queue_data:
             queue_ids = export_stock_obj.create_woo_export_stock_queue(instance, queue_data)
@@ -991,7 +1001,7 @@ class WooProductTemplateEpt(models.Model):
             response = wc_api.get("products/%s/variations" % (result.get("id")), params=params)
             variants = response.json()
 
-            total_pages = response.headers.get("X-WP-TotalPages")
+            total_pages = response.headers.get('X-WP-TotalPages', 0) if response else 1
             if int(total_pages) > 1:
                 for page in range(2, int(total_pages) + 1):
                     params["page"] = page
@@ -1023,11 +1033,15 @@ class WooProductTemplateEpt(models.Model):
 
         if not woo_product:
             woo_product = woo_product_obj.with_context(active_test=False).search(
-                [('default_code', '=', product_sku), ('woo_instance_id', '=', woo_instance.id)], limit=1)
+                [('default_code', '=', product_sku),
+                 ('woo_template_id.woo_tmpl_id', '=', False),
+                 ('woo_instance_id', '=', woo_instance.id)], limit=1)
 
         if not woo_product:
             woo_product = woo_product_obj.with_context(active_test=False).search(
-                [('product_id.default_code', '=', product_sku), ('woo_instance_id', '=', woo_instance.id)], limit=1)
+                [('product_id.default_code', '=', product_sku),
+                 ('woo_template_id.woo_tmpl_id', '=', False),
+                 ('woo_instance_id', '=', woo_instance.id)], limit=1)
 
         if not woo_product:
             odoo_product = odoo_product.search([('default_code', '=', product_sku)], limit=1)
@@ -1528,20 +1542,16 @@ class WooProductTemplateEpt(models.Model):
         Migrated Maulik Barad on Date 07-Oct-2021.
         """
         common_log_line_obj = self.env["common.log.lines.ept"]
-        queue_counter = 0
         model_id = common_log_line_obj.get_model_id(self._name)
         if order_queue_line:
             self.env["woo.process.import.export"].sync_woo_attributes(woo_instance)
 
         for product_data_queue_line in product_data_queue_lines:
-            if queue_counter == 10:
-                if not order_queue_line:
-                    product_queue_id = product_data_queue_line.queue_id if product_data_queue_line else False
-                    if product_queue_id:
-                        product_queue_id.is_process_queue = True
-                self._cr.commit()
-                queue_counter = 0
-            queue_counter += 1
+            if not order_queue_line:
+                product_queue_id = product_data_queue_line.queue_id if product_data_queue_line else False
+                if product_queue_id:
+                    product_queue_id.is_process_queue = True
+            self._cr.commit()
             template_updated = False
             data, product_queue_id, product_data_queue_line, sync_category_and_tags = self.prepare_product_response(
                 order_queue_line,
@@ -1562,6 +1572,17 @@ class WooProductTemplateEpt(models.Model):
                 [("woo_tmpl_id", "=", woo_product_template_id), ("woo_instance_id", "=", woo_instance.id)], limit=1)
             _logger.info("Process started for Product- %s||%s||Queue %s.", woo_product_template_id, template_title,
                          product_queue_id if order_queue_line else product_data_queue_line.queue_id.name)
+            if any(isinstance(variant, int) for variant in data["variations"]):
+                message = """Process Failed of Product: %s || Reason is the default WooCommerce support 
+                only dict type response from product variations.""" % (template_title)
+                common_log_line_obj.woo_create_product_log_line(message, model_id,
+                                                                product_data_queue_line if not order_queue_line
+                                                                else order_queue_line,
+                                                                common_log_book_id)
+                _logger.info("Process Failed of Product %s||Queue %s||Reason is %s", woo_product_template_id,
+                             product_queue_id, message)
+                product_data_queue_line.write({"state": "failed", "last_process_date": datetime.now()})
+                continue
             if data["variations"]:
                 new_woo_template = self.variation_product_sync(woo_instance, data, common_log_book_id,
                                                                product_data_queue_line, order_queue_line, woo_template,
@@ -1907,6 +1928,9 @@ class WooProductTemplateEpt(models.Model):
                     woo_template.write(woo_template_vals)
                     template_updated = True
                 woo_product.write(variant_info)
+                woo_weight = float(variant.get("weight") or "0.0")
+                weight = self.convert_weight_by_uom(woo_weight, woo_instance, import_process=True)
+                odoo_product.write({"weight": weight})
             update_price = woo_instance.sync_price_with_product
             update_images = woo_instance.sync_images_with_product
             if update_price:
@@ -2030,6 +2054,9 @@ class WooProductTemplateEpt(models.Model):
                                                                    common_log_book_id)
                 woo_template.write(woo_template_vals)
             woo_product.write(variant_info)
+            woo_weight = float(product_response.get("weight") or "0.0")
+            weight = self.convert_weight_by_uom(woo_weight, woo_instance, import_process=True)
+            odoo_product.write({"weight": weight})
         if update_price:
             woo_instance.woo_pricelist_id.set_product_price_ept(woo_product.product_id.id, variant_price)
             if woo_instance.woo_extra_pricelist_id:
@@ -2265,6 +2292,13 @@ class WooProductTemplateEpt(models.Model):
             woo_attribute = obj_woo_attribute.search(
                 [('attribute_id', '=', attribute.id), ('woo_instance_id', '=', instance.id),
                  ('exported_in_woo', '=', True)], limit=1)
+            # If same attribute available in Odoo with different Variants Creation Mode
+            # this time it will search in Odoo attribute with same name(For Handle Json Serializable error).
+            if not woo_attribute:
+                odoo_attributes = self.env['product.attribute'].search([('name', '=', attribute.name)])
+                woo_attribute = obj_woo_attribute.search(
+                    [('attribute_id', 'in', odoo_attributes.ids), ('woo_instance_id', '=', instance.id),
+                     ('exported_in_woo', '=', True)], limit=1)
             if woo_attribute and woo_attribute.woo_attribute_id:
                 return {attribute.id: woo_attribute.woo_attribute_id}
         if attribute_res.status_code not in [200, 201]:
@@ -2350,6 +2384,7 @@ class WooProductTemplateEpt(models.Model):
         for variant in template.woo_product_ids:
             price = 0.0
             sale_price = 0.0
+            sale_price_rule = False
             if variant.variant_id:
                 info = {'id': variant.variant_id}
 
@@ -2365,12 +2400,21 @@ class WooProductTemplateEpt(models.Model):
                 info.update(self.get_variant_image(instance, variant))
 
             if update_price:
-                price = instance.woo_pricelist_id.get_product_price(variant.product_id, 1.0, partner=False,
-                                                                    uom_id=variant.product_id.uom_id.id)
-                sale_price = instance.woo_extra_pricelist_id.get_product_price(variant.product_id, 1.0, partner=False
-                                                                               ,uom_id=variant.product_id.uom_id.id) \
-                    if instance.woo_extra_pricelist_id else sale_price
-                info.update({'regular_price': str(price), 'sale_price': str(sale_price)})
+                # price = instance.woo_pricelist_id.get_product_price(variant.product_id, 1.0, partner=False,
+                #                                                     uom_id=variant.product_id.uom_id.id)
+                # sale_price = instance.woo_extra_pricelist_id.get_product_price(variant.product_id, 1.0, partner=False
+                #                                                                , uom_id=variant.product_id.uom_id.id) \
+                price, regular_price_rule = instance.woo_pricelist_id.get_product_price_list_rule(variant.product_id,
+                                                                                                  1.0,
+                                                                                                  partner=False)
+                info.update({'regular_price': str(price)})
+                if instance.woo_extra_pricelist_id:
+                    sale_price, sale_price_rule = instance.woo_extra_pricelist_id.get_product_price_list_rule(
+                        variant.product_id,
+                        1.0,
+                        partner=False)
+                    if sale_price_rule:
+                        info.update({'sale_price': str(sale_price) if sale_price > 0 else ""})
 
             if template.woo_tmpl_id != variant.variant_id:
                 if variant.variant_id:
@@ -2379,11 +2423,14 @@ class WooProductTemplateEpt(models.Model):
                     variants_to_create.append(info)
                 flag = True
             elif template.woo_tmpl_id == variant.variant_id:
-                del data['variations']
+                if data.get('variations', False):
+                    del data['variations']
                 if basic_detail:
                     data.update({'sku': variant.default_code, "manage_stock": variant.woo_is_manage_stock})
                 if update_price:
-                    data.update({'regular_price': str(price), 'sale_price': str(sale_price)})
+                    data.update({'regular_price': str(price)})
+                    if instance.woo_extra_pricelist_id and sale_price_rule:
+                        data.update({'sale_price': str(sale_price) if sale_price > 0 else ""})
                 flag = True
 
         if data.get('variations'):
@@ -2396,7 +2443,7 @@ class WooProductTemplateEpt(models.Model):
                     raise UserError(_("Something went wrong while Updating Variants.\n\nPlease Check your Connection "
                                       "and Instance Configuration.\n\n" + str(error)))
                 _logger.info('variations batch process completed [status: %s]', res.status_code)
-                if res.status_code in [200, 201]:
+                if res.status_code in [200, 201] and data.get('variations'):
                     del data['variations']
                 if res.status_code not in [200, 201]:
                     message = "Update Product Variations\n%s" % res.content

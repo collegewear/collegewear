@@ -100,9 +100,9 @@ class WooInstanceEpt(models.Model):
         Migrated by Maulik Barad on Date 07-Oct-2021.
         """
         shipping_product = self.env.ref('woo_commerce_ept.product_woo_shipping_ept', False)
-        if not shipping_product:
-            raise UserError(_("Please upgrade the module and then try to create new instance.\n Maybe the shipping "
-                              "product has been deleted, it will be recreated at the time of module upgrade."))
+        # if not shipping_product:
+        #     raise UserError(_("Please upgrade the module and then try to create new instance.\n Maybe the shipping "
+        #                       "product has been deleted, it will be recreated at the time of module upgrade."))
         return shipping_product
 
     @api.model
@@ -113,9 +113,9 @@ class WooInstanceEpt(models.Model):
         Migrated by Maulik Barad on Date 07-Oct-2021.
         """
         fee_product = self.env.ref('woo_commerce_ept.product_woo_fees_ept', False)
-        if not fee_product:
-            raise UserError(_("Please upgrade the module and then try to create new instance.\n Maybe the Fee "
-                              "product has been deleted, it will be recreated at the time of module upgrade."))
+        # if not fee_product:
+        #     raise UserError(_("Please upgrade the module and then try to create new instance.\n Maybe the Fee "
+        #                       "product has been deleted, it will be recreated at the time of module upgrade."))
         return fee_product
 
     @api.model
@@ -126,9 +126,9 @@ class WooInstanceEpt(models.Model):
         Migrated by Maulik Barad on Date 07-Oct-2021.
         """
         discount_product = self.env.ref('woo_commerce_ept.product_woo_discount_ept', False)
-        if not discount_product:
-            raise UserError(_("Please upgrade the module and then try to create new instance.\n Maybe the Discount "
-                              "product has been deleted, it will be recreated at the time of module upgrade."))
+        # if not discount_product:
+        #     raise UserError(_("Please upgrade the module and then try to create new instance.\n Maybe the Discount "
+        #                       "product has been deleted, it will be recreated at the time of module upgrade."))
         return discount_product
 
     @api.model
@@ -302,22 +302,24 @@ class WooInstanceEpt(models.Model):
             meta_mapping_record = self.meta_mapping_ids.filtered(
                 lambda mapping: mapping.woo_operation == self._context.get(
                     'woo_operation') and mapping.model_id.model == record._name)
-            data = list(filter(lambda val: val.get('meta_data'), vals))
+            last_vals = [val for val in vals if 'meta_data' not in val]
+            data = list(filter(lambda val: val.get('meta_data'), last_vals))
             if meta_mapping_record:
-                if len(record.ids) > 1:
-                    rec_val = []
-                    for rec in record:
-                        rec_val.append(getattr(rec, meta_mapping_record.field_id.name))
-                    field_value = ','.join(rec_val)
-                else:
-                    field_value = getattr(record, meta_mapping_record.field_id.name)
-                if not data:
-                    data.append({
-                        'key': meta_mapping_record.woo_meta_key, 'value': field_value})
-                    vals[0].update({'meta_data': data})
-                else:
-                    vals[0].get('meta_data').append({
-                        'key': meta_mapping_record.woo_meta_key, 'value': field_value})
+                for meta_mapping_field in meta_mapping_record:
+                    if len(record.ids) > 1:
+                        rec_val = []
+                        for rec in record:
+                            rec_val.append(getattr(rec, meta_mapping_field.field_id.name))
+                        field_value = ','.join(rec_val)
+                    else:
+                        field_value = getattr(record, meta_mapping_field.field_id.name)
+                    if not data:
+                        data.append({
+                            'key': meta_mapping_field.woo_meta_key, 'value': field_value})
+                        last_vals[0].update({'meta_data': data})
+                    else:
+                        last_vals[0].get('meta_data').append({
+                            'key': meta_mapping_field.woo_meta_key, 'value': field_value})
             return vals
         return True
 

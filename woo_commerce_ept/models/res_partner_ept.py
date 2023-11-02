@@ -6,6 +6,7 @@ from odoo import models, fields
 class WooResPartnerEpt(models.Model):
     _name = "woo.res.partner.ept"
     _description = "WooCommerce Res Partner"
+    _rec_name = "partner_id"
 
     partner_id = fields.Many2one("res.partner", "Customer", ondelete='cascade')
     woo_customer_id = fields.Char(help="WooCommerce customer id.")
