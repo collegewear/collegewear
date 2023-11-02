@@ -36,7 +36,7 @@ class ResPartner(models.Model):
                 if not vals.get(key):
                     continue
                 if (key in vals) and isinstance(vals.get(key), str):
-                    _domain.append((key, '=ilike', vals.get(key)))
+                    _domain.append((key, '=ilike', self._remove_special_chars(vals.get(key))))
                 else:
                     _domain.append((key, '=', vals.get(key)))
             partner = self.search(_domain, limit=1) if _domain else False

@@ -23,3 +23,4 @@ from . import account_bank_statement_line
 from . import queue_line_dashboard
 from . import digest
 from . import delivery_carrier
+from . import app_version

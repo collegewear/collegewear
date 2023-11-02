@@ -25,6 +25,10 @@ class SaleOrderLine(models.Model):
         new_order_line = sale_order_line.new(order_line)
         new_order_line.product_id_change()
         new_order_line._onchange_product_id_set_customer_lead()
+        # check sale_margin module installed or not if installed then calculate
+        # purchase_price for sale order line
+        if self.check_sale_margin_module_installed_ept():
+            new_order_line._compute_purchase_price()
         order_line = sale_order_line._convert_to_write({name: new_order_line[name] for name in new_order_line._cache})
 
         order_line.update({
@@ -35,6 +39,14 @@ class SaleOrderLine(models.Model):
             'state': 'draft',
         })
         return order_line
+
+    def check_sale_margin_module_installed_ept(self):
+        """
+        Define this method for check sale_margin module installed or not.
+        :return:
+        """
+        module_obj = self.env['ir.module.module']
+        return module_obj.sudo().search([('name', '=', 'sale_margin'), ('state', '=', 'installed')])
 
     def _prepare_procurement_values(self, group_id=False):
         """
