@@ -29,6 +29,7 @@ class WooManualQueueProcessEpt(models.TransientModel):
             self.process_export_stock_queue_manually()
         return {'type': 'ir.actions.client',
                 'tag': 'reload'}
+
     def process_export_stock_queue_manually(self):
         """
         This method used to process the export stock queue manually.
@@ -38,9 +39,11 @@ class WooManualQueueProcessEpt(models.TransientModel):
         model = self._context.get('active_model')
         woo_export_stock_queue_line_obj = self.env["woo.export.stock.queue.line.ept"]
         export_stock_queue_ids = self._context.get('active_ids')
-        if model == "woo.order.data.queue.line.ept":
+        queue_line_active_ids = []
+        if model == "woo.export.stock.queue.line.ept":
+            queue_line_active_ids.extend(self._context.get('active_ids'))
             export_stock_queue_ids = woo_export_stock_queue_line_obj.search([
-                ('id', 'in', export_stock_queue_ids)]).mapped("woo_export_stock_queue_id").ids
+                ('id', 'in', export_stock_queue_ids)]).mapped("export_stock_queue_id").ids
         self.env.cr.execute(
             """update woo_export_stock_queue_ept set is_process_queue = False where is_process_queue = True""")
         self._cr.commit()
@@ -48,6 +51,10 @@ class WooManualQueueProcessEpt(models.TransientModel):
             export_stock_queue_line_batch = woo_export_stock_queue_line_obj.search(
                 [("export_stock_queue_id", "=", export_stock_queue_id),
                  ("state", "in", ('draft', 'failed'))])
+            # This code is process only selected queue
+            if queue_line_active_ids:
+                export_stock_queue_line_batch = export_stock_queue_line_batch.filtered(
+                    lambda line: line.id in queue_line_active_ids)
             export_stock_queue_line_batch.process_export_stock_queue_data()
         return True
 
@@ -59,18 +66,23 @@ class WooManualQueueProcessEpt(models.TransientModel):
         """
         model = self._context.get('active_model')
         order_data_queue_obj = self.env[model]
+        queue_line_active_ids = []
         order_queue_ids = order_data_queue_obj.browse(self._context.get('active_ids')).filtered(
             lambda x: x.state != "done")
         if model == 'woo.order.data.queue.line.ept':
-            order_queue_ids = order_queue_ids.mapped('order_data_queue_id').filtered(lambda x: x.state != "done")
+            queue_line_active_ids.extend(self._context.get('active_ids'))
+            order_queue_ids = order_queue_ids.mapped('order_data_queue_id').filtered(
+                lambda queue: queue.state != "done")
         self.env.cr.execute(
             """update woo_order_data_queue_ept set is_process_queue = False where is_process_queue = True""")
         self._cr.commit()
         for order_queue_id in order_queue_ids:
             order_queue_line_batch = order_queue_id.order_data_queue_line_ids.filtered(
-                lambda x: x.state in ["draft", "failed"])
+                lambda line: line.state in ["draft", "failed"])
+            # This code is process only selected queue
+            if queue_line_active_ids:
+                order_queue_line_batch = order_queue_line_batch.filtered(lambda line: line.id in queue_line_active_ids)
             order_queue_line_batch.process_order_queue_line()
-
         return True
 
     def process_customer_queue_manually(self):
@@ -86,12 +98,17 @@ class WooManualQueueProcessEpt(models.TransientModel):
         """
         model = self._context.get('active_model')
         customer_data_queue_obj = self.env[model]
+        queue_line_active_ids = []
         customer_queues = customer_data_queue_obj.browse(
             self._context.get('active_ids', False)).filtered(lambda x: x.state != "done")
         if model == 'woo.customer.data.queue.line.ept':
+            queue_line_active_ids.extend(self._context.get('active_ids'))
             customer_queues = customer_queues.mapped('queue_id').filtered(lambda x: x.state != "done")
         for customer_queue in customer_queues:
             customer_queue_lines = customer_queue.queue_line_ids.filtered(lambda x: x.state in ['draft', 'failed'])
+            # This code is process only selected queue
+            if queue_line_active_ids:
+                customer_queue_lines = customer_queue_lines.filtered(lambda line: line.id in queue_line_active_ids)
             if customer_queue_lines:
                 customer_queue_lines.process_woo_customer_queue_lines_directly()
         return True
@@ -104,9 +121,11 @@ class WooManualQueueProcessEpt(models.TransientModel):
         """
         model = self._context.get('active_model')
         product_queue_data_obj = self.env[model]
+        queue_line_active_ids = []
         product_queue_ids = product_queue_data_obj.browse(self._context.get('active_ids')).filtered(
             lambda x: x.state != 'done')
         if model == 'woo.product.data.queue.line.ept':
+            queue_line_active_ids.extend(self._context.get('active_ids'))
             product_queue_ids = product_queue_ids.mapped('queue_id').filtered(
                 lambda x: x.state != 'done')
         self.env.cr.execute(
@@ -115,6 +134,10 @@ class WooManualQueueProcessEpt(models.TransientModel):
         for woo_product_queue_id in product_queue_ids:
             woo_product_queue_line_ids = woo_product_queue_id.queue_line_ids.filtered(
                 lambda x: x.state in ['draft', 'failed'])
+            # This code is process only selected queue
+            if queue_line_active_ids:
+                woo_product_queue_line_ids = woo_product_queue_line_ids.filtered(
+                    lambda line: line.id in queue_line_active_ids)
             if woo_product_queue_line_ids:
                 woo_product_queue_line_ids.process_woo_product_queue_lines()
         return True
@@ -127,14 +150,20 @@ class WooManualQueueProcessEpt(models.TransientModel):
         """
         model = self._context.get('active_model')
         coupon_data_queue_obj = self.env[model]
+        queue_line_active_ids = []
         coupon_queue_ids = coupon_data_queue_obj.browse(self._context.get('active_ids')).filtered(
             lambda x: x.state != 'done')
         if model == 'woo.coupon.data.queue.line.ept':
+            queue_line_active_ids.extend(self._context.get('active_ids'))
             coupon_queue_ids = coupon_queue_ids.mapped('coupon_data_queue_id').filtered(
                 lambda x: x.state != 'done')
         for coupon_queue_id in coupon_queue_ids:
             coupon_queue_line_batch = coupon_queue_id.coupon_data_queue_line_ids.filtered(
                 lambda x: x.state in ["draft", "failed"])
+            # This code is process only selected queue
+            if queue_line_active_ids:
+                coupon_queue_line_batch = coupon_queue_line_batch.filtered(
+                    lambda line: line.id in queue_line_active_ids)
             coupon_queue_line_batch.process_coupon_queue_line()
         return True
 

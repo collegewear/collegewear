@@ -30,7 +30,7 @@ class API(object):
         self.wp_api = kwargs.get("wp_api", True)
         self.version = kwargs.get("version", "wc/v3")
         self.is_ssl = self.__is_ssl()
-        self.timeout = kwargs.get("timeout", 60)
+        self.timeout = kwargs.get("timeout", 600)
         self.verify_ssl = kwargs.get("verify_ssl", True)
         self.query_string_auth = kwargs.get("query_string_auth", False)
 

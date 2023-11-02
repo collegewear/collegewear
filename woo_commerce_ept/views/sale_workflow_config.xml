@@ -15,6 +15,7 @@
                         <field name="woo_financial_status" required="1"/>
                         <field name="woo_payment_gateway_id" domain="[('woo_instance_id','=',woo_instance_id)]"
                                required="1"/>
+                        <field name="woo_order_status" required="1"/>
                     </group>
                     <group>
                         <field name="woo_instance_id" domain="[('active','=',True)]" required="1"/>
@@ -33,6 +34,7 @@
                 <field name="woo_financial_status"/>
                 <field name="woo_instance_id"/>
                 <field name="woo_payment_gateway_id"/>
+                <field name="woo_order_status"/>
                 <filter name="archive_financial_status" string="Archived" icon="terp-accessories-archiver"
                         domain="[('active','=',False)]"/>
                 <group expand="0" string="Group By...">
@@ -55,6 +57,7 @@
                 <field name="woo_auto_workflow_id"/>
                 <field name="woo_payment_gateway_id" domain="[('woo_instance_id','=',woo_instance_id)]"/>
                 <field name="woo_financial_status"/>
+                <field name="woo_order_status"/>
             </tree>
         </field>
     </record>

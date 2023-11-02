@@ -577,14 +577,19 @@ class WooProcessImportExport(models.TransientModel):
             sync_vals = {'woo_instance_id': self.woo_instance_id.id, 'queue_id': queue.id}
 
             for customer in customer_queue:
-                sync_vals.update({
-                    'last_process_date': datetime.now(),
-                    'woo_synced_data': json.dumps(customer),
-                    'woo_synced_data_id': customer.get('id'),
-                    'name': customer.get('first_name') + " " + customer.get('last_name') if customer.get(
-                        'first_name') else customer.get('username')
-                })
-                woo_sync_customer_data.create(sync_vals)
+                existing_customer_data_queue_line = woo_sync_customer_data.search([('woo_synced_data_id', '=', customer.get('id')), ('woo_instance_id', '=', self.woo_instance_id.id),
+                     ('state', 'in', ['draft', 'failed'])])
+                if not existing_customer_data_queue_line:
+                    sync_vals.update({
+                        'last_process_date': datetime.now(),
+                        'woo_synced_data': json.dumps(customer),
+                        'woo_synced_data_id': customer.get('id'),
+                        'name': customer.get('first_name') + " " + customer.get('last_name') if customer.get(
+                            'first_name') else customer.get('username')
+                    })
+                    woo_sync_customer_data.create(sync_vals)
+                else:
+                    existing_customer_data_queue_line.write({'woo_synced_data': json.dumps(customer)})
             queues += queue
         return queues
 
@@ -605,16 +610,22 @@ class WooProcessImportExport(models.TransientModel):
         if self.woo_instance_id.sync_images_with_product:
             is_sync_image_with_product = 'pending'
         for woo_product in woo_products:
-            sync_queue_vals_line.update(
-                {
-                    'woo_synced_data': json.dumps(woo_product),
-                    'woo_update_product_date': woo_product.get('date_modified'),
-                    'woo_synced_data_id': woo_product.get('id'),
-                    'name': woo_product.get('name'),
-                    'image_import_state': is_sync_image_with_product
-                })
+            existing_product_queue_line_data = woo_product_synced_queue_line_obj.search(
+                [('woo_instance_id', '=', self.woo_instance_id.id), ('woo_synced_data_id', '=', woo_product.get('id')),
+                 ('state', 'in', ['draft', 'failed'])])
+            if not existing_product_queue_line_data:
+                sync_queue_vals_line.update(
+                    {
+                        'woo_synced_data': json.dumps(woo_product),
+                        'woo_update_product_date': woo_product.get('date_modified'),
+                        'woo_synced_data_id': woo_product.get('id'),
+                        'name': woo_product.get('name'),
+                        'image_import_state': is_sync_image_with_product
+                    })
 
-            woo_product_synced_queue_line_obj.create(sync_queue_vals_line)
+                woo_product_synced_queue_line_obj.create(sync_queue_vals_line)
+            else:
+                existing_product_queue_line_data.write({'woo_synced_data': json.dumps(woo_product)})
             if len(queue_obj.queue_line_ids) == 101:
                 queue_obj = self.create_product_queue(created_by)
                 _logger.info("Product Data Queue %s created. Adding data in it.....", queue_obj.name)
@@ -813,6 +824,7 @@ class WooProcessImportExport(models.TransientModel):
         """
         woo_instance_obj = self.env['woo.instance.ept']
         woo_product_tmpl_obj = self.env['woo.product.template.ept']
+        export_stock_data_obj = self.env['woo.export.stock.queue.ept']
         woo_tmpl_ids = self._context.get('active_ids')
         instances = woo_instance_obj.search([('active', '=', True)])
         for instance in instances:
@@ -825,9 +837,29 @@ class WooProcessImportExport(models.TransientModel):
             # woo_product_tmpl_obj.with_context(
             #     updated_products_in_inventory=odoo_products).woo_update_stock(instance,
             #                                                                   woo_templates)
-            woo_product_tmpl_obj.with_context(
+            export_stock_queue_id = woo_product_tmpl_obj.with_context(
                 updated_products_in_inventory=odoo_products).woo_create_queue_for_export_stock(instance,
                                                                                                woo_templates)
+            if export_stock_queue_id:
+                queue_ids = export_stock_queue_id
+                export_stock_data_queue = export_stock_data_obj.browse(queue_ids)
+                if not export_stock_data_queue.export_stock_queue_line_ids:
+                    export_stock_data_queue.unlink()
+                    return True
+                action_name = "woo_commerce_ept.action_woo_export_stock_queue"
+                form_view_name = "woo_commerce_ept.woo_export_stock_form_view_ept"
+                if queue_ids and action_name and form_view_name:
+                    action = self.env.ref(action_name).sudo().read()[0]
+                    form_view = self.sudo().env.ref(form_view_name)
+
+                    if len(queue_ids) == 1:
+                        action.update({"view_id": (form_view.id, form_view.name), "res_id": queue_ids[0],
+                                       "views": [(form_view.id, "form")]})
+                    else:
+                        action["domain"] = [("id", "in", queue_ids)]
+                    return action
+        return True
+
 
     def update_export_category_tags_coupons_in_woo(self):
         """
@@ -1267,7 +1299,7 @@ class WooProcessImportExport(models.TransientModel):
             woo_variant.write(woo_variant_vals)
 
         # For adding all odoo images into Woo layer.
-        woo_prepare_product_for_export_obj.create_woo_variant_images(woo_template.id, woo_variant)
+        woo_prepare_product_for_export_obj.create_woo_variant_images(woo_template, woo_variant)
 
         return woo_variant
 

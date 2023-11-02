@@ -34,6 +34,10 @@
                                    readonly="context.get('is_already_instance_created', False)"/>
                             <field name="woo_verify_ssl" readonly="context.get('is_already_instance_created', False)"
                                    class="o_onboard_boolean_toggle" widget="boolean_toggle"/>
+                            <field name="update_notification"
+                                   readonly="context.get('is_already_instance_created', False)"
+                                   widget="boolean_toggle"/>
+                            <field name="customer_so_number" readonly="context.get('is_already_instance_created', False)"/>
                         </group>
                     </div>
                     <div class='col-md-6'>
@@ -120,6 +124,25 @@
                         </div>
                     </p>
                 </group>
+                <div class="row mt16 o_settings_container o_onboard_padding">
+                    <div class="col-12 col-lg-12 o_setting_box o_onboard_setting_box">
+                        <div class="alert alert-warning on_board_alert_warning" role="alert">
+                            <h3>Note :</h3>
+                            <ul>
+                                <li>
+                                    If you choose to activate <b>Get Update Notification</b>, Emipro Server will ask for
+                                    details about your Odoo, including Company name, Company email, Database UUID,
+                                    and List of Emipro apps. Therefore, Emipro can inform you of any app-related
+                                    updates and fixes. You can disable this configuration at any time. Please check
+                                    our privacy policy for more detail.
+                                    <a href='https://www.emiprotechnologies.com/iap-privacy-policy' target="_blank">
+                                        Click Here
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
                 <footer>
                     <button string="Create" type="object"
                             name="woo_test_connection" class="oe_highlight o_onboard_button"

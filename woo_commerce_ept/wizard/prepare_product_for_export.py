@@ -11,6 +11,7 @@ from odoo.tools.misc import xlsxwriter
 from odoo.tools import is_html_empty
 from odoo import models, fields, _
 from odoo.exceptions import UserError
+from odoo.tools.mimetypes import guess_mimetype
 
 _logger = logging.getLogger("WooCommerce")
 
@@ -390,7 +391,6 @@ class PrepareProductForExport(models.TransientModel):
         woo_product_image_obj = self.env["woo.product.image.ept"]
         common_product_image_obj = self.env["common.product.image.ept"]
 
-
         common_product_images = common_product_image_obj.search(
             [('template_id', '=', woo_template.product_tmpl_id.id)])
         images = common_product_images.filtered(lambda img: img.image == woo_template.product_tmpl_id.image_1920)
@@ -410,6 +410,7 @@ class PrepareProductForExport(models.TransientModel):
                 woo_product_image_list.append({
                     "odoo_image_id": odoo_image.id,
                     "woo_template_id": woo_template.id,
+                    "image_mime_type": guess_mimetype(base64.b64decode(odoo_image.image)),
                 })
         if woo_product_image_list:
             woo_product_image_obj.create(woo_product_image_list)
@@ -447,6 +448,7 @@ class PrepareProductForExport(models.TransientModel):
                     "odoo_image_id": variant_image.id,
                     "woo_variant_id": woo_variant.id,
                     "woo_template_id": woo_template.id,
+                    "image_mime_type": guess_mimetype(base64.b64decode(variant_image.image)),
                     "sequence": 0
                 })
         return True

@@ -31,6 +31,10 @@
                             <field name="woo_consumer_secret" required="1"
                                    readonly="context.get('is_already_instance_created', False)"/>
                             <field name="woo_verify_ssl" readonly="context.get('is_already_instance_created', False)"/>
+                            <field name="update_notification" widget="boolean_toggle"
+                                   readonly="context.get('is_already_instance_created', False)"/>
+                            <field name="customer_so_number"
+                                   readonly="context.get('is_already_instance_created', False)"/>
                         </group>
                     </div>
                     <div class='col-md-6' style="display: contents;">
@@ -94,6 +98,18 @@
                                         </li>
                                         <li>
                                             WooCommerce =&gt; Configuration =&gt; Settings
+                                        </li>
+                                        <li>
+                                            If you choose to activate <b>Get Update Notification</b>, Emipro Server will
+                                            ask for details about your Odoo, including Company name, Company email,
+                                            Database UUID, and List of Emipro apps. Therefore, Emipro can inform you of
+                                            any app-related updates and fixes. You can disable this configuration at any
+                                            time.
+                                            Please check our privacy policy for more detail.
+                                            <a href='https://www.emiprotechnologies.com/iap-privacy-policy'
+                                               target="_blank">
+                                                Click Here
+                                            </a>
                                         </li>
                                     </ul>
                                 </div>
@@ -248,6 +264,20 @@
                                             class="oe_link"
                                             attrs="{'invisible':[('show_woo_net_profit_report','=',False)]}"
                                             help="Install this module if you are See Net profit report for all Instances."/>
+                                </div>
+                            </div>
+
+                            <div class="col-12 o_setting_box o_setting_box o_setting_box_woo_config">
+                                <div class="o_setting_left_pane ml-2">
+                                    <field name="use_default_terms_and_condition_of_odoo"/>
+                                </div>
+                                <div class="o_setting_right_pane">
+                                    <label for="use_default_terms_and_condition_of_odoo"/>
+                                    <div class="text-muted">
+                                        - If checked, it will use Odoo's default T&amp;C under Sales Order notes.
+                                        <br/>
+                                        - If unchecked, it will import Sales Order note from WooCommerce order response.
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -500,22 +530,6 @@
                                 <div class="col-12 col-lg-6 o_setting_box">
                                     <div class="o_setting_left_pane"/>
                                     <div class="o_setting_right_pane">
-                                        <span class="o_form_label">WooCommerce Instance Extra Pricelist</span>
-                                        <div class="text-muted">
-                                            1.During product sync operation,sale price will be Imported/Exported using
-                                            this Pricelist.
-                                        </div>
-                                        <div class="content-group">
-                                            <div class="mt16">
-                                                <field name="woo_extra_pricelist_id" options="{'no_create': True}"/>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="col-12 col-lg-6 o_setting_box">
-                                    <div class="o_setting_left_pane"/>
-                                    <div class="o_setting_right_pane">
                                         <span class="o_form_label">WooCommerce Instance Product Category</span>
                                         <div class="text-muted">
                                             1.Select Product Category for set product category on product template.
@@ -525,6 +539,49 @@
                                                 <field name="woo_product_categ_id" options="{'no_create': True}"/>
                                             </div>
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div name="pricelist_information_header" attrs="{'invisible': [('woo_instance_id', '=', False)]}">
+                        <h2 style="font-size:25px;background-color:#e9ecef;">Pricelist Configuration</h2>
+                    </div>
+
+                    <div name="pricelist_information" class="row mt16 o_settings_container"
+                         attrs="{'invisible': [('woo_instance_id', '=', False)]}">
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_right_pane">
+                                <label for="woo_pricelist_id" string="Instance Pricelist"/>
+                                <div class="text-muted">
+                                    1. When performing a product sync operation, prices will be imported/exported using
+                                    this Pricelist.
+                                    <br/>
+                                    2. When importing the orders from Woo-commerce, this pricelist will be assigned to
+                                    the order if the currency of the store matches the currency set in the pricelist
+                                    here.
+                                </div>
+                                <div class="content-group">
+                                    <div class="mt16">
+                                        <field name="woo_pricelist_id" class="oe_inline"
+                                               options="{'no_create':True,'no_create_edit':True}"
+                                               attrs="{'required':[('woo_instance_id','!=',False)]}"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_right_pane">
+                                <label for="woo_extra_pricelist_id" string="Instance Extra Pricelist"/>
+                                <div class="text-muted">
+                                    The product Woo-commerce sales prices can be managed through this pricelist when
+                                    importing/exporting products between Odoo and Woo-commerce.
+                                </div>
+                                <div class="content-group">
+                                    <div class="mt16">
+                                        <field name="woo_extra_pricelist_id" options="{'no_create': True}"/>
                                     </div>
                                 </div>
                             </div>
@@ -640,26 +697,6 @@
                                         <div class="mt16">
                                             <field name="woo_order_prefix" class="oe_inline"
                                                    attrs="{'invisible': [('woo_custom_order_prefix', '=', True)]}"/>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="col-12 col-lg-6 o_setting_box">
-                                <div class="o_setting_right_pane">
-                                    <label for="woo_pricelist_id" string="WooCommerce Instance Pricelist"/>
-                                    <div class="text-muted">
-                                        1.During product sync operation, prices will be Imported/Exported using this
-                                        Pricelist.
-                                        <br/>
-                                        2.During order sync operation, this pricelist will be set in the order if the
-                                        order currency from store and the currency from the pricelist set here, matches.
-                                    </div>
-                                    <div class="content-group">
-                                        <div class="mt16">
-                                            <field name="woo_pricelist_id" class="oe_inline"
-                                                   options="{'no_create':True,'no_create_edit':True}"
-                                                   attrs="{'required':[('woo_instance_id','!=',False)]}"/>
                                         </div>
                                     </div>
                                 </div>

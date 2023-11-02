@@ -3,6 +3,7 @@
 import logging
 
 import requests
+from datetime import datetime
 from odoo import models, fields, api, _, SUPERUSER_ID
 from odoo.addons.base.models.res_partner import _tz_get
 from odoo.addons.website.tools import get_video_embed_code
@@ -56,6 +57,19 @@ class WooInstanceConfig(models.TransientModel):
                                          help='URL of a video for showcasing by instance.')
     woo_instance_video_embed_code = fields.Html(compute="_compute_woo_instance_video_embed_code", sanitize=False)
 
+    update_notification = fields.Boolean(string="Get Update Notification?",
+                                         help="If Enable, then You will be notify for the latest "
+                                              "version app.")
+    customer_so_number = fields.Char("App Order Number", help="Your App Purchase Registered Number")
+
+    @api.model
+    def default_get(self, fields):
+        res = super(WooInstanceConfig, self).default_get(fields)
+        is_notify, customer_so_number = self.env['res.config.settings'].get_in_app_system_parameter()
+        res['update_notification'] = is_notify
+        res['customer_so_number'] = customer_so_number
+        return res
+
     @api.depends('woo_instance_video_url')
     def _compute_woo_instance_video_embed_code(self):
         for image in self:
@@ -95,6 +109,12 @@ class WooInstanceConfig(models.TransientModel):
             instance.write({'is_instance_create_from_onboarding_panel': True})
             company.set_onboarding_step_done('woo_instance_onboarding_state')
             company.write({'is_create_woo_more_instance': True})
+
+        if instance and self.update_notification:
+            config_setting = self.env['res.config.settings']
+            config_setting.update_system_param(self.update_notification, self.customer_so_number)
+            config_setting.enable_emipro_notification(self.update_notification)
+
         return {
             'type': 'ir.actions.client',
             'tag': 'reload',
@@ -359,7 +379,10 @@ class ResConfigSettings(models.TransientModel):
     show_woo_net_profit_report = fields.Boolean(string='WooCommerce Net Profit Report',
                                                 config_parameter="woo_commerce_ept.show_woo_net_profit_report")
     woo_product_categ_id = fields.Many2one("product.category", string="Product Category",
-                                                    help="This category will set on new create products.")
+                                           help="This category will set on new create products.")
+    use_default_terms_and_condition_of_odoo = fields.Boolean("Use Default Terms & Condition of Odoo",
+                                                             config_parameter="woo_commerce_ept.use_default_terms_and_condition_of_odoo",
+                                                             help="If checked, it will set the custom note and default terms and condition in order note")
 
     @api.model
     def create(self, vals):
